@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>日本家族旅行計畫 (終極防護版)</title>
+    <title>日本家族旅行計畫</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -50,6 +50,7 @@
         .flight-card::before { left: -12px; border-right: 1px solid #C2B29A; }
         .flight-card::after { right: -12px; border-left: 1px solid #C2B29A; }
         .date-selector-sticky { background-color: #F7F5F0; z-index: 20; top: 0; }
+        .dragging { opacity: 0.5; border: 2px dashed #5B6E53; }
         .pulse-once { animation: pulse-ring 0.6s ease-out forwards; }
         @keyframes pulse-ring { 0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(91, 110, 83, 0.7); } 70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(91, 110, 83, 0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(91, 110, 83, 0); } }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #5B6E53; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; }
@@ -71,6 +72,7 @@
             <button @click="currentTab = 'expenses'" :class="{'active': currentTab === 'expenses'}" class="tab-button"><i class="fa-solid fa-coins"></i></button>
         </div>
     </div>
+
     <div v-if="syncState === 'syncing'" class="fixed top-3 left-1/2 transform -translate-x-1/2 bg-kyoto-dark/90 text-white text-[11px] px-4 py-2 rounded-full shadow-lg z-[100] flex items-center font-bold tracking-wide animate-fade-in">
         <div class="loader mr-2"></div> 雲端同步中...
     </div>
@@ -78,7 +80,13 @@
         <i class="fa-solid fa-check-circle mr-2 text-sm"></i> 已同步至雲端
     </div>
     <div v-if="syncState === 'error'" class="fixed top-3 left-1/2 transform -translate-x-1/2 bg-gray-600/90 text-white text-[11px] px-4 py-2 rounded-full shadow-lg z-[100] flex items-center font-bold tracking-wide animate-fade-in">
-        <i class="fa-solid fa-mobile-screen mr-2 text-sm"></i> 已儲存於本機 (離線模式)
+        <i class="fa-solid fa-mobile-screen mr-2 text-sm"></i> 離線模式 (已存本機)
+    </div>
+
+    <div v-if="firebaseError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mx-4 mt-4 rounded-r-xl shadow-sm text-sm relative">
+        <button @click="firebaseError = ''" class="absolute top-2 right-2 text-red-400 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button>
+        <p class="font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 系統診斷訊息</p>
+        <p class="mt-1 font-mono text-xs break-all">{{ firebaseError }}</p>
     </div>
 
     <main class="p-4">
@@ -163,7 +171,8 @@
                     <div class="w-full bg-kyoto-primary/10 rounded-xl p-3 text-kyoto-primary text-lg font-bold text-center">NT$ {{ currencyResult }}</div>
                 </div>
             </div>
-                        <div class="bg-kyoto-paper rounded-2xl p-5 card-shadow">
+
+            <div class="bg-kyoto-paper rounded-2xl p-5 card-shadow">
                 <h3 class="font-bold text-kyoto-dark mb-3 border-b border-gray-100 pb-2"><i class="fa-solid fa-hotel mr-2"></i> 住宿導航</h3>
                 <div v-for="hotel in hotels" :key="hotel.name" class="mb-3 last:mb-0 flex justify-between items-center">
                     <div class="text-sm font-bold text-kyoto-dark">{{ hotel.name }}</div>
@@ -201,7 +210,6 @@
                         <button @click="removeExpense(idx)" class="ml-3 text-gray-300 hover:text-red-500"><i class="fa-solid fa-trash-can text-xs"></i></button>
                     </div>
                 </div>
-                <div v-if="expenses.length === 0" class="text-center py-8 text-kyoto-wood opacity-50 text-sm">尚無紀錄</div>
             </div>
         </div>
     </main>
@@ -252,6 +260,7 @@
             </div>
         </div>
     </div>
+
     <div v-if="showItineraryModal" @click.self="showItineraryModal = false" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl max-h-[80vh] overflow-y-auto">
             <h3 class="font-bold text-center border-b pb-2 mb-4">{{ isEditMode ? '修改行程' : '新增行程' }}</h3>
@@ -304,8 +313,9 @@
     </div>
 
 </div>
+
 <script>
-    // 終極防線：強制 Firebase 使用 HTTP 連線，突破所有的防火牆與網路阻擋！
+    // 徹底修正錯誤的 Firebase 初始化
     const firebaseConfig = {
       apiKey: "AIzaSyAjEH96l5reDjsnge5ZxJGNDaCL4GF5YbQ",
       authDomain: "family-trip-2026-a10ca.firebaseapp.com",
@@ -317,15 +327,23 @@
     
     let db = null;
     let tripDocRef = null;
+    let globalFirebaseError = '';
+
     try {
         if (typeof firebase !== 'undefined') {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
-            // 【關鍵修改】：強制啟動 Long Polling，這能繞過 99% 的電信商與瀏覽器阻擋
-            db.settings({ experimentalForceLongPolling: true, merge: true });
+            
+            // 【修復的關鍵】：移除了之前放進去的非法參數，保證正常連線！
+            db.settings({ experimentalForceLongPolling: true });
+            
             tripDocRef = db.collection('trips').doc('family-trip-2026');
+        } else {
+            globalFirebaseError = 'Firebase 套件未成功載入，請檢查網路。';
         }
-    } catch (e) { console.error("Firebase 初始化失敗:", e); }
+    } catch (e) { 
+        globalFirebaseError = 'Firebase 初始化錯誤: ' + e.message;
+    }
 
     const { createApp, ref, computed, onMounted } = Vue
 
@@ -333,6 +351,7 @@
         setup() {
             const currentTab = ref('itinerary');
             const syncState = ref('idle'); 
+            const firebaseError = ref(globalFirebaseError);
             const LOCAL_KEY = 'family_trip_2026_safe_data';
             
             const dates = ref([]);
@@ -342,7 +361,6 @@
             const expenses = ref([]);
             const selectedDateIndex = ref(0);
 
-            // 本地儲存防護
             const loadLocalData = () => {
                 try {
                     const local = localStorage.getItem(LOCAL_KEY);
@@ -377,7 +395,6 @@
                 } catch(e) {}
             };
 
-            // 【關鍵修改】：加入強制 3 秒超時機制，絕對不卡住！
             const syncToFirebase = () => {
                 saveLocalData();
                 if (!tripDocRef) {
@@ -391,9 +408,10 @@
                 let isTimeout = false;
                 const timeoutId = setTimeout(() => {
                     isTimeout = true;
-                    syncState.value = 'error'; // 如果超過3秒，直接判斷為離線，釋放畫面
-                    setTimeout(() => { syncState.value = 'idle'; }, 3000);
-                }, 3500);
+                    syncState.value = 'error'; 
+                    firebaseError.value = "連線超時：您的網路或瀏覽器阻擋了 Firebase 的對外通訊";
+                    setTimeout(() => { syncState.value = 'idle'; }, 5000);
+                }, 10000);
 
                 tripDocRef.set({
                     dates: JSON.parse(JSON.stringify(dates.value || [])),
@@ -406,13 +424,16 @@
                     if (isTimeout) return;
                     clearTimeout(timeoutId);
                     syncState.value = 'success'; 
+                    firebaseError.value = ""; // 成功後清空錯誤訊息
                     setTimeout(() => { if (syncState.value === 'success') syncState.value = 'idle'; }, 2000);
                 })
                 .catch(err => {
                     if (isTimeout) return;
                     clearTimeout(timeoutId);
-                    syncState.value = 'error'; 
-                    setTimeout(() => { syncState.value = 'idle'; }, 3000);
+                    syncState.value = 'error';
+                    // 顯示真實的錯誤訊息，不再瞎猜
+                    firebaseError.value = "寫入失敗：" + err.message;
+                    setTimeout(() => { syncState.value = 'idle'; }, 5000);
                 });
             };
 
@@ -431,8 +452,12 @@
                                 expenses.value = data.expenses || expenses.value;
                                 saveLocalData(); 
                             }
+                        }, (error) => {
+                            firebaseError.value = "讀取權限遭拒：" + error.message;
                         });
-                    } catch (e) {}
+                    } catch (e) {
+                        firebaseError.value = "設定監聽時發生錯誤：" + e.message;
+                    }
                 }
             });
 
@@ -518,6 +543,7 @@
 
             const openWeatherEditor = () => { weatherForm.value = { ...(weatherData.value[selectedDateIndex.value] || {condition:'sunny',temp:'',feel:''}) }; showWeatherModal.value = true; };
             const saveWeather = () => { if(!weatherData.value[selectedDateIndex.value]) weatherData.value[selectedDateIndex.value] = {}; weatherData.value[selectedDateIndex.value] = { ...weatherForm.value }; showWeatherModal.value = false; syncToFirebase(); };
+
             const editItem = (item) => { isEditMode.value = true; newItinerary.value = {...item}; showItineraryModal.value = true; };
             const saveItineraryItem = () => {
                 if(!itineraryData.value[selectedDateIndex.value]) itineraryData.value[selectedDateIndex.value] = [];
@@ -542,7 +568,7 @@
 
             return {
                 currentTab, dates, selectedDateIndex, weatherData, itineraryData, shoppingList, expenses, currentItinerary, currentWeather, totalExpensesJPY, getTempHigh, getTempLow,
-                syncState, currencyInput, currencyResult, calculateCurrency, formatNumber,
+                syncState, firebaseError, currencyInput, currencyResult, calculateCurrency, formatNumber,
                 getCategoryColor, getCategoryIcon, getExpenseCategoryColor, getExpenseCategoryIcon, getWeatherIcon, getTransportIcon, getWeatherDescription, openMap, toggleVisited,
                 showDateManagerModal, showItineraryModal, showExpenseModal, showWeatherModal, isEditMode,
                 newDateInput, newItinerary, newExpense, weatherForm,
