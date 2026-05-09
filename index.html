@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>日本家族旅行計畫</title>
+    <title>日本家族旅行計畫 (終極測試版)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -50,7 +50,6 @@
         .flight-card::before { left: -12px; border-right: 1px solid #C2B29A; }
         .flight-card::after { right: -12px; border-left: 1px solid #C2B29A; }
         .date-selector-sticky { background-color: #F7F5F0; z-index: 20; top: 0; }
-        .dragging { opacity: 0.5; border: 2px dashed #5B6E53; }
         .pulse-once { animation: pulse-ring 0.6s ease-out forwards; }
         @keyframes pulse-ring { 0% { transform: scale(0.9); box-shadow: 0 0 0 0 rgba(91, 110, 83, 0.7); } 70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(91, 110, 83, 0); } 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(91, 110, 83, 0); } }
         .loader { border: 3px solid #f3f3f3; border-top: 3px solid #5B6E53; border-radius: 50%; width: 14px; height: 14px; animation: spin 1s linear infinite; }
@@ -80,17 +79,19 @@
         <i class="fa-solid fa-check-circle mr-2 text-sm"></i> 已同步至雲端
     </div>
     <div v-if="syncState === 'error'" class="fixed top-3 left-1/2 transform -translate-x-1/2 bg-gray-600/90 text-white text-[11px] px-4 py-2 rounded-full shadow-lg z-[100] flex items-center font-bold tracking-wide animate-fade-in">
-        <i class="fa-solid fa-mobile-screen mr-2 text-sm"></i> 離線模式 (已存本機)
-    </div>
-
-    <div v-if="firebaseError" class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mx-4 mt-4 rounded-r-xl shadow-sm text-sm relative">
-        <button @click="firebaseError = ''" class="absolute top-2 right-2 text-red-400 hover:text-red-700"><i class="fa-solid fa-xmark"></i></button>
-        <p class="font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i> 系統診斷訊息</p>
-        <p class="mt-1 font-mono text-xs break-all">{{ firebaseError }}</p>
+        <i class="fa-solid fa-mobile-screen mr-2 text-sm"></i> 本機模式 (離線儲存)
     </div>
 
     <main class="p-4">
         
+        <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4 text-center">
+            <p class="text-xs text-yellow-700 mb-2 font-bold">除錯專區 (成功後可刪除)</p>
+            <button @click="testFirebaseDirectly" class="bg-yellow-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-md hover:bg-yellow-600 transition-all">
+                ⚡ 點我測試連線 Firebase
+            </button>
+            <p v-if="testMessage" class="text-xs mt-2 text-red-600 font-bold">{{ testMessage }}</p>
+        </div>
+
         <div v-if="currentTab === 'itinerary'" class="animate-fade-in">
             <div class="sticky date-selector-sticky pt-1 -mx-4 px-4 pb-2 z-20">
                 <div class="flex justify-between items-center mb-3">
@@ -315,7 +316,7 @@
 </div>
 
 <script>
-    // 徹底修正錯誤的 Firebase 初始化
+    // Firebase 初始化
     const firebaseConfig = {
       apiKey: "AIzaSyAjEH96l5reDjsnge5ZxJGNDaCL4GF5YbQ",
       authDomain: "family-trip-2026-a10ca.firebaseapp.com",
@@ -327,23 +328,13 @@
     
     let db = null;
     let tripDocRef = null;
-    let globalFirebaseError = '';
-
     try {
         if (typeof firebase !== 'undefined') {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
-            
-            // 【修復的關鍵】：移除了之前放進去的非法參數，保證正常連線！
-            db.settings({ experimentalForceLongPolling: true });
-            
             tripDocRef = db.collection('trips').doc('family-trip-2026');
-        } else {
-            globalFirebaseError = 'Firebase 套件未成功載入，請檢查網路。';
         }
-    } catch (e) { 
-        globalFirebaseError = 'Firebase 初始化錯誤: ' + e.message;
-    }
+    } catch (e) { console.error("Firebase Init Error:", e); }
 
     const { createApp, ref, computed, onMounted } = Vue
 
@@ -351,7 +342,7 @@
         setup() {
             const currentTab = ref('itinerary');
             const syncState = ref('idle'); 
-            const firebaseError = ref(globalFirebaseError);
+            const testMessage = ref('');
             const LOCAL_KEY = 'family_trip_2026_safe_data';
             
             const dates = ref([]);
@@ -360,6 +351,29 @@
             const shoppingList = ref([]);
             const expenses = ref([]);
             const selectedDateIndex = ref(0);
+
+            // ⚡ 強制測試連線按鈕功能
+            const testFirebaseDirectly = () => {
+                if (!db) {
+                    testMessage.value = "Firebase 未正確載入！請檢查網路。";
+                    return;
+                }
+                syncState.value = 'syncing';
+                testMessage.value = "正在嘗試與 Firebase 建立連線...";
+                
+                db.collection('trips').doc('test-connection').set({
+                    message: "恭喜！這是一次成功的連線！",
+                    time: new Date().toISOString()
+                })
+                .then(() => {
+                    syncState.value = 'success';
+                    testMessage.value = "連線成功！請去 Firebase 的資料庫看看有沒有多出一個 test-connection 的資料夾！";
+                })
+                .catch(err => {
+                    syncState.value = 'error';
+                    testMessage.value = "連線被拒絕：" + err.message + " (這通常代表您的 Rules 安全規則沒有設定為 allow read, write: if true; )";
+                });
+            };
 
             const loadLocalData = () => {
                 try {
@@ -395,6 +409,7 @@
                 } catch(e) {}
             };
 
+            // 【完全純淨】的資料上傳模式
             const syncToFirebase = () => {
                 saveLocalData();
                 if (!tripDocRef) {
@@ -405,35 +420,23 @@
                 
                 syncState.value = 'syncing'; 
                 
-                let isTimeout = false;
-                const timeoutId = setTimeout(() => {
-                    isTimeout = true;
-                    syncState.value = 'error'; 
-                    firebaseError.value = "連線超時：您的網路或瀏覽器阻擋了 Firebase 的對外通訊";
-                    setTimeout(() => { syncState.value = 'idle'; }, 5000);
-                }, 10000);
-
-                tripDocRef.set({
+                // 將資料完全轉換為純淨的 JSON 物件，拔除所有 Vue Proxy 特性
+                const pureData = {
                     dates: JSON.parse(JSON.stringify(dates.value || [])),
                     weatherData: JSON.parse(JSON.stringify(weatherData.value || [])),
                     itineraryData: JSON.parse(JSON.stringify(itineraryData.value || [])),
                     shoppingList: JSON.parse(JSON.stringify(shoppingList.value || [])),
                     expenses: JSON.parse(JSON.stringify(expenses.value || []))
-                }, { merge: true })
+                };
+
+                tripDocRef.set(pureData)
                 .then(() => {
-                    if (isTimeout) return;
-                    clearTimeout(timeoutId);
                     syncState.value = 'success'; 
-                    firebaseError.value = ""; // 成功後清空錯誤訊息
                     setTimeout(() => { if (syncState.value === 'success') syncState.value = 'idle'; }, 2000);
                 })
                 .catch(err => {
-                    if (isTimeout) return;
-                    clearTimeout(timeoutId);
-                    syncState.value = 'error';
-                    // 顯示真實的錯誤訊息，不再瞎猜
-                    firebaseError.value = "寫入失敗：" + err.message;
-                    setTimeout(() => { syncState.value = 'idle'; }, 5000);
+                    syncState.value = 'error'; 
+                    setTimeout(() => { syncState.value = 'idle'; }, 3000);
                 });
             };
 
@@ -445,19 +448,23 @@
                         tripDocRef.onSnapshot((doc) => {
                             if (doc.exists) {
                                 const data = doc.data();
-                                dates.value = data.dates || dates.value;
-                                weatherData.value = data.weatherData || weatherData.value;
-                                itineraryData.value = data.itineraryData || itineraryData.value;
-                                shoppingList.value = data.shoppingList || shoppingList.value;
-                                expenses.value = data.expenses || expenses.value;
-                                saveLocalData(); 
+                                // 如果雲端有資料，才覆蓋本地
+                                if (data.dates && data.dates.length > 0) {
+                                    dates.value = data.dates;
+                                    weatherData.value = data.weatherData;
+                                    itineraryData.value = data.itineraryData;
+                                    shoppingList.value = data.shoppingList;
+                                    expenses.value = data.expenses;
+                                    saveLocalData(); 
+                                }
+                            } else {
+                                // 如果雲端是空的，主動把本地資料推上去建立檔案！
+                                if (dates.value.length > 0) {
+                                    syncToFirebase();
+                                }
                             }
-                        }, (error) => {
-                            firebaseError.value = "讀取權限遭拒：" + error.message;
                         });
-                    } catch (e) {
-                        firebaseError.value = "設定監聽時發生錯誤：" + e.message;
-                    }
+                    } catch (e) {}
                 }
             });
 
@@ -568,7 +575,7 @@
 
             return {
                 currentTab, dates, selectedDateIndex, weatherData, itineraryData, shoppingList, expenses, currentItinerary, currentWeather, totalExpensesJPY, getTempHigh, getTempLow,
-                syncState, firebaseError, currencyInput, currencyResult, calculateCurrency, formatNumber,
+                syncState, testMessage, testFirebaseDirectly, currencyInput, currencyResult, calculateCurrency, formatNumber,
                 getCategoryColor, getCategoryIcon, getExpenseCategoryColor, getExpenseCategoryIcon, getWeatherIcon, getTransportIcon, getWeatherDescription, openMap, toggleVisited,
                 showDateManagerModal, showItineraryModal, showExpenseModal, showWeatherModal, isEditMode,
                 newDateInput, newItinerary, newExpense, weatherForm,
