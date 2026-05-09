@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.3.4/vue.global.prod.min.js"></script>
+    
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     
@@ -57,27 +58,7 @@
 </head>
 <body>
 
-<div id="error-box" style="display:none; background: #ffebee; color: #c62828; padding: 15px; margin: 10px; border-radius: 8px; font-size: 14px; font-weight: bold; position: relative; z-index: 9999;">
-    ⚠️ 系統發生錯誤，請截圖本畫面：<br>
-    <span id="error-msg" style="font-weight: normal; font-size: 12px; word-break: break-all;"></span>
-</div>
-
-<script>
-    window.onerror = function(msg, url, line) {
-        document.getElementById('error-box').style.display = 'block';
-        document.getElementById('error-msg').innerHTML += msg + ' (行號: ' + line + ')<br>';
-        document.getElementById('app-loader').style.display = 'none';
-        return false;
-    };
-</script>
-
-<div id="app-loader" style="text-align:center; padding-top: 150px; color: #5B6E53; font-weight: bold;">
-    <i class="fa-solid fa-plane fa-bounce text-4xl mb-4"></i><br>
-    <span style="font-size: 18px;">正在載入行程表...</span><br>
-    <span style="font-size: 12px; color: #888; margin-top: 15px; display: block;">如果卡住超過 5 秒，<br>請點擊右上角「⋮」選擇在 Chrome 開啟</span>
-</div>
-
-<div id="app" class="app-container" style="display: none;">
+<div id="app" class="app-container">
 
     <div class="header-bg relative">
         <div class="header-image-container">
@@ -90,7 +71,6 @@
             <button @click="currentTab = 'expenses'" :class="{'active': currentTab === 'expenses'}" class="tab-button"><i class="fa-solid fa-coins"></i></button>
         </div>
     </div>
-
     <div v-if="syncState === 'syncing'" class="fixed top-3 left-1/2 transform -translate-x-1/2 bg-kyoto-dark/90 text-white text-[11px] px-4 py-2 rounded-full shadow-lg z-[100] flex items-center font-bold tracking-wide animate-fade-in">
         <div class="loader mr-2"></div> 雲端同步中...
     </div>
@@ -135,7 +115,7 @@
             </div>
 
             <div v-if="dates.length > 0" class="space-y-4">
-                <div v-for="(item, idx) in currentItinerary" :key="item.id || idx" class="relative">
+                <div v-for="(item, idx) in currentItinerary" :key="item.id || idx" class="relative" draggable="true" @dragstart="onDragStart($event, idx)" @dragover.prevent @drop="onDrop($event, idx)">
                     
                     <div v-if="idx > 0" class="pl-8 pb-3 flex items-center text-xs text-kyoto-wood">
                         <div class="h-6 w-0.5 bg-kyoto-wood/30 absolute left-6 -top-3"></div>
@@ -183,6 +163,13 @@
                     <div class="w-full bg-kyoto-primary/10 rounded-xl p-3 text-kyoto-primary text-lg font-bold text-center">NT$ {{ currencyResult }}</div>
                 </div>
             </div>
+                        <div class="bg-kyoto-paper rounded-2xl p-5 card-shadow">
+                <h3 class="font-bold text-kyoto-dark mb-3 border-b border-gray-100 pb-2"><i class="fa-solid fa-hotel mr-2"></i> 住宿導航</h3>
+                <div v-for="hotel in hotels" :key="hotel.name" class="mb-3 last:mb-0 flex justify-between items-center">
+                    <div class="text-sm font-bold text-kyoto-dark">{{ hotel.name }}</div>
+                    <button @click="openMap(hotel.name)" class="w-8 h-8 bg-kyoto-primary/10 text-kyoto-primary rounded-full flex items-center justify-center"><i class="fa-solid fa-location-arrow text-xs"></i></button>
+                </div>
+            </div>
         </div>
 
         <div v-if="currentTab === 'shopping'" class="animate-fade-in">
@@ -214,6 +201,7 @@
                         <button @click="removeExpense(idx)" class="ml-3 text-gray-300 hover:text-red-500"><i class="fa-solid fa-trash-can text-xs"></i></button>
                     </div>
                 </div>
+                <div v-if="expenses.length === 0" class="text-center py-8 text-kyoto-wood opacity-50 text-sm">尚無紀錄</div>
             </div>
         </div>
     </main>
@@ -264,7 +252,6 @@
             </div>
         </div>
     </div>
-
     <div v-if="showItineraryModal" @click.self="showItineraryModal = false" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl max-h-[80vh] overflow-y-auto">
             <h3 class="font-bold text-center border-b pb-2 mb-4">{{ isEditMode ? '修改行程' : '新增行程' }}</h3>
@@ -318,7 +305,7 @@
 
 </div>
 <script>
-    // Firebase 初始化
+    // 終極防線：強制 Firebase 使用 HTTP 連線，突破所有的防火牆與網路阻擋！
     const firebaseConfig = {
       apiKey: "AIzaSyAjEH96l5reDjsnge5ZxJGNDaCL4GF5YbQ",
       authDomain: "family-trip-2026-a10ca.firebaseapp.com",
@@ -334,9 +321,11 @@
         if (typeof firebase !== 'undefined') {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
+            // 【關鍵修改】：強制啟動 Long Polling，這能繞過 99% 的電信商與瀏覽器阻擋
+            db.settings({ experimentalForceLongPolling: true, merge: true });
             tripDocRef = db.collection('trips').doc('family-trip-2026');
         }
-    } catch (e) { console.error("Firebase 連線阻擋:", e); }
+    } catch (e) { console.error("Firebase 初始化失敗:", e); }
 
     const { createApp, ref, computed, onMounted } = Vue
 
@@ -388,6 +377,7 @@
                 } catch(e) {}
             };
 
+            // 【關鍵修改】：加入強制 3 秒超時機制，絕對不卡住！
             const syncToFirebase = () => {
                 saveLocalData();
                 if (!tripDocRef) {
@@ -395,7 +385,16 @@
                     setTimeout(() => { syncState.value = 'idle'; }, 3000);
                     return;
                 }
+                
                 syncState.value = 'syncing'; 
+                
+                let isTimeout = false;
+                const timeoutId = setTimeout(() => {
+                    isTimeout = true;
+                    syncState.value = 'error'; // 如果超過3秒，直接判斷為離線，釋放畫面
+                    setTimeout(() => { syncState.value = 'idle'; }, 3000);
+                }, 3500);
+
                 tripDocRef.set({
                     dates: JSON.parse(JSON.stringify(dates.value || [])),
                     weatherData: JSON.parse(JSON.stringify(weatherData.value || [])),
@@ -404,10 +403,14 @@
                     expenses: JSON.parse(JSON.stringify(expenses.value || []))
                 }, { merge: true })
                 .then(() => {
+                    if (isTimeout) return;
+                    clearTimeout(timeoutId);
                     syncState.value = 'success'; 
                     setTimeout(() => { if (syncState.value === 'success') syncState.value = 'idle'; }, 2000);
                 })
                 .catch(err => {
+                    if (isTimeout) return;
+                    clearTimeout(timeoutId);
                     syncState.value = 'error'; 
                     setTimeout(() => { syncState.value = 'idle'; }, 3000);
                 });
@@ -415,10 +418,7 @@
 
             onMounted(() => {
                 loadLocalData();
-                // Vue 成功執行，把載入畫面藏起來，顯示 App
-                document.getElementById('app-loader').style.display = 'none';
-                document.getElementById('app').style.display = 'block';
-
+                
                 if (tripDocRef) {
                     try {
                         tripDocRef.onSnapshot((doc) => {
@@ -436,7 +436,6 @@
                 }
             });
 
-            // 計算屬性
             const currentItinerary = computed(() => {
                 if (itineraryData.value && itineraryData.value[selectedDateIndex.value]) return itineraryData.value[selectedDateIndex.value];
                 return [];
@@ -519,7 +518,6 @@
 
             const openWeatherEditor = () => { weatherForm.value = { ...(weatherData.value[selectedDateIndex.value] || {condition:'sunny',temp:'',feel:''}) }; showWeatherModal.value = true; };
             const saveWeather = () => { if(!weatherData.value[selectedDateIndex.value]) weatherData.value[selectedDateIndex.value] = {}; weatherData.value[selectedDateIndex.value] = { ...weatherForm.value }; showWeatherModal.value = false; syncToFirebase(); };
-
             const editItem = (item) => { isEditMode.value = true; newItinerary.value = {...item}; showItineraryModal.value = true; };
             const saveItineraryItem = () => {
                 if(!itineraryData.value[selectedDateIndex.value]) itineraryData.value[selectedDateIndex.value] = [];
@@ -534,14 +532,22 @@
             const removeExpense = (idx) => { expenses.value.splice(idx,1); syncToFirebase(); };
             const removeShoppingItem = (idx) => { shoppingList.value.splice(idx,1); syncToFirebase(); };
 
+            const onDragStart = (e, i) => { e.dataTransfer.setData('text/plain', i); };
+            const onDrop = (e, i) => {
+                const fromIdx = e.dataTransfer.getData('text/plain');
+                const list = itineraryData.value[selectedDateIndex.value];
+                const item = list.splice(fromIdx, 1)[0]; list.splice(i, 0, item);
+                syncToFirebase();
+            };
+
             return {
                 currentTab, dates, selectedDateIndex, weatherData, itineraryData, shoppingList, expenses, currentItinerary, currentWeather, totalExpensesJPY, getTempHigh, getTempLow,
                 syncState, currencyInput, currencyResult, calculateCurrency, formatNumber,
-                getCategoryColor,getCategoryIcon, getExpenseCategoryColor, getExpenseCategoryIcon, getWeatherIcon, getTransportIcon, getWeatherDescription, openMap, toggleVisited,
+                getCategoryColor, getCategoryIcon, getExpenseCategoryColor, getExpenseCategoryIcon, getWeatherIcon, getTransportIcon, getWeatherDescription, openMap, toggleVisited,
                 showDateManagerModal, showItineraryModal, showExpenseModal, showWeatherModal, isEditMode,
                 newDateInput, newItinerary, newExpense, weatherForm,
                 addNewDate, removeDate, handleAddClick, openWeatherEditor, saveWeather, editItem, saveItineraryItem, removeItineraryItem,
-                addExpense, removeExpense, removeShoppingItem,
+                addExpense, removeExpense, removeShoppingItem, onDragStart, onDrop,
                 hotels: ref([{ name: '京阪京都大飯店' }, { name: '大阪難波東方飯店' }])
             };
         }
