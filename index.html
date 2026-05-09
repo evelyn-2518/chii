@@ -67,7 +67,7 @@
             width: 100%;
             height: 100%;
             object-fit: cover; 
-            object-position: left center; /* 關鍵修改：將 focus 改為靠左對齊 */
+            object-position: center;
             display: block; 
         }
         
@@ -173,7 +173,6 @@
     <!-- 頁首與滿版圖片 -->
     <div class="header-bg relative">
         <div class="header-image-container">
-            <!-- 請將此處的 src 替換為您的圖片檔名，例如 src="banner.jpg" -->
             <img src="banner.jpg" alt="旅行橫幅圖片" onerror="this.src='https://via.placeholder.com/1920x400/E5E5E5/8B3A36?text=Upload+Your+Banner+Here'">
         </div>
         
@@ -199,21 +198,33 @@
         <!-- 【分頁 1：每日行程】 -->
         <div v-if="currentTab === 'itinerary'" class="animate-fade-in">
             
-            <!-- 日期選單 (橫向滑動) -->
-            <div class="flex overflow-x-auto hide-scrollbar space-x-3 pb-4 mb-2 snap-x px-1 sticky date-selector-sticky pt-1 -mx-4 px-4">
-                <div v-for="(day, index) in dates" :key="index" 
-                     @click="selectedDateIndex = index"
-                     class="snap-center flex-shrink-0 w-[65px] h-[75px] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 shadow-sm"
-                     :class="selectedDateIndex === index ? 'bg-kyoto-primary text-white scale-105' : 'bg-white text-kyoto-wood border border-kyoto-wood/30'">
-                    <!-- 星期字體較大 -->
-                    <span class="text-xl font-bold uppercase tracking-wider">{{ day.weekday }}</span> 
-                    <!-- 日期字體較小 -->
-                    <span class="text-xs font-medium mt-1">{{ day.date }}</span> 
+            <!-- 日期管理與選單 -->
+            <div class="sticky date-selector-sticky pt-1 -mx-4 px-4 pb-2 z-20">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold text-kyoto-dark text-sm ml-1"><i class="fa-solid fa-calendar-days text-kyoto-wood mr-1"></i> 行程日期</h3>
+                    <button @click="showDateManagerModal = true" class="text-xs bg-white border border-gray-200 text-gray-600 px-3 py-1.5 rounded-full hover:bg-gray-50 transition-colors shadow-sm font-bold">
+                        <i class="fa-solid fa-gear mr-1"></i> 管理日期
+                    </button>
+                </div>
+
+                <!-- 日期選單 (橫向滑動) -->
+                <div v-if="dates.length > 0" class="flex overflow-x-auto hide-scrollbar space-x-3 snap-x px-1">
+                    <div v-for="(day, index) in dates" :key="index" 
+                         @click="selectedDateIndex = index"
+                         class="snap-center flex-shrink-0 w-[65px] h-[75px] rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300 shadow-sm mb-2"
+                         :class="selectedDateIndex === index ? 'bg-kyoto-primary text-white scale-105' : 'bg-white text-kyoto-wood border border-kyoto-wood/30'">
+                        <span class="text-xl font-bold uppercase tracking-wider">{{ day.weekday }}</span> 
+                        <span class="text-xs font-medium mt-1">{{ day.date }}</span> 
+                    </div>
+                </div>
+                
+                <div v-else class="text-center py-4 bg-white rounded-2xl border border-dashed border-gray-300 text-gray-400 text-sm">
+                    尚未設定任何日期，請點擊上方「管理日期」新增。
                 </div>
             </div>
 
-            <!-- 天氣資訊 -->
-            <div v-if="weatherData[selectedDateIndex]" class="mb-5 bg-white rounded-2xl p-4 flex justify-between items-center card-shadow">
+            <!-- 當前日期的天氣資訊 -->
+            <div v-if="dates.length > 0 && weatherData[selectedDateIndex]" class="mb-5 mt-2 bg-white rounded-2xl p-4 flex justify-between items-center card-shadow">
                 <div class="flex items-center text-kyoto-dark space-x-4">
                     <i :class="getWeatherIcon(weatherData[selectedDateIndex].condition)" class="text-4xl text-kyoto-primary"></i>
                     <div>
@@ -230,7 +241,7 @@
             </div>
 
             <!-- 行程列表 -->
-            <div class="space-y-4">
+            <div v-if="dates.length > 0" class="space-y-4">
                 <div v-for="(item, idx) in currentItinerary" :key="item.id" 
                      class="relative group"
                      draggable="true" 
@@ -239,7 +250,7 @@
                      @drop="onDrop($event, idx)"
                      @dragenter.prevent>
                     
-                    <!-- 交通時間提示 (前日住宿出發 或 行程之間) -->
+                    <!-- 交通時間提示 -->
                     <div v-if="idx === 0 && selectedDateIndex > 0" class="pl-8 pb-3 flex items-center text-xs text-kyoto-wood">
                         <i class="fa-solid fa-bed mr-2 text-kyoto-wood/70"></i>
                         <span class="font-bold">從前日住宿出發 (約 30 分鐘)</span>
@@ -318,7 +329,6 @@
 
         <!-- 【分頁 2：資訊】 -->
         <div v-if="currentTab === 'info'" class="space-y-5 animate-fade-in">
-            
             <!-- 匯率換算 -->
             <div class="bg-kyoto-paper border-l-4 border-kyoto-primary rounded-r-2xl p-5 card-shadow">
                 <h3 class="font-bold text-kyoto-dark mb-4 border-b border-gray-100 pb-2"><i class="fa-solid fa-yen-sign text-kyoto-primary mr-2"></i> 匯率換算 (當日參考)</h3>
@@ -499,7 +509,6 @@
                                 </button>
                             </div>
                         </div>
-                        <!-- 備註顯示 -->
                         <div v-if="exp.note" class="pl-11 text-xs text-gray-500 italic">
                             * {{ exp.note }}
                         </div>
@@ -511,9 +520,40 @@
     </main>
 
     <!-- 浮動新增按鈕 (+) -->
-    <button v-if="currentTab !== 'info'" @click="handleAddClick" class="fixed bottom-6 right-6 w-14 h-14 bg-kyoto-secondary rounded-full fab-shadow text-white text-2xl flex items-center justify-center hover:scale-105 transition-transform z-40">
+    <button v-if="currentTab !== 'info' && dates.length > 0" @click="handleAddClick" class="fixed bottom-6 right-6 w-14 h-14 bg-kyoto-secondary rounded-full fab-shadow text-white text-2xl flex items-center justify-center hover:scale-105 transition-transform z-40">
         <i class="fa-solid fa-plus"></i>
     </button>
+
+    <!-- ================= MODALS 區塊 ================= -->
+
+    <!-- 【Modal：管理日期 (新增/刪除)】 -->
+    <div v-if="showDateManagerModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <h3 class="font-bold text-lg mb-4 text-center text-kyoto-dark border-b pb-2">管理行程日期</h3>
+            
+            <!-- 新增日期 -->
+            <div class="flex space-x-2 mb-5">
+                <input v-model="newDateInput" type="date" class="flex-1 bg-gray-50 border border-gray-200 rounded-xl p-2.5 text-sm outline-none focus:border-kyoto-primary">
+                <button @click="addNewDate" class="bg-kyoto-primary text-white px-4 rounded-xl text-sm font-bold shadow-md hover:bg-kyoto-primary/90 transition-colors">新增</button>
+            </div>
+
+            <!-- 現有日期列表 -->
+            <ul class="space-y-2 mb-6">
+                <li v-for="(day, idx) in dates" :key="idx" class="flex items-center justify-between bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <div class="flex items-center">
+                        <span class="w-8 h-8 rounded-full bg-white border border-gray-200 text-kyoto-primary flex items-center justify-center font-bold text-xs shadow-sm mr-3">D{{ idx + 1 }}</span>
+                        <span class="font-bold text-kyoto-dark">{{ day.fullDate || day.date }} ({{ day.weekday }})</span>
+                    </div>
+                    <button @click="removeDate(idx)" class="w-8 h-8 text-gray-400 hover:text-kyoto-secondary transition-colors flex items-center justify-center" title="刪除日期">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </li>
+                <li v-if="dates.length === 0" class="text-center text-gray-400 text-sm py-4 border border-dashed border-gray-300 rounded-xl">目前尚無日期設定，請選擇日期並新增</li>
+            </ul>
+
+            <button @click="showDateManagerModal = false" class="w-full py-3 rounded-xl bg-gray-100 text-gray-600 font-bold text-sm hover:bg-gray-200 transition-colors">完成</button>
+        </div>
+    </div>
 
     <!-- 【Modal：新增/編輯行程】 -->
     <div v-if="showItineraryModal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
@@ -546,16 +586,13 @@
                 
                 <input v-model="newItinerary.address" placeholder="地址/地點 (供 Google Map 導航)" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-kyoto-primary">
                 
-                <!-- 備註/特色 -->
                 <textarea v-model="newItinerary.note" placeholder="特色 & 備註細節" rows="3" class="w-full bg-gray-50 border border-gray-200 rounded-xl p-3 text-sm outline-none focus:border-kyoto-primary"></textarea>
             </div>
             <div class="flex space-x-3 mt-5">
                 <button @click="showItineraryModal = false" class="flex-1 py-3 rounded-xl bg-gray-100 text-gray-500 font-bold text-sm">取消</button>
-                
                 <button v-if="isEditMode" @click="removeItineraryItem(newItinerary.id)" class="flex-1 py-3 rounded-xl bg-red-50 text-kyoto-secondary font-bold text-sm border border-red-100 hover:bg-red-100">
                     <i class="fa-solid fa-trash-can mr-1"></i> 刪除
                 </button>
-                
                 <button @click="saveItineraryItem" class="flex-1 py-3 rounded-xl bg-kyoto-primary text-white font-bold text-sm shadow-md">{{ isEditMode ? '儲存' : '新增' }}</button>
             </div>
         </div>
@@ -622,14 +659,12 @@
 
     createApp({
         setup() {
-            // 固定匯率基準 (依據 prompt 需求設定為當前預設值)
             const EXCHANGE_RATE = 0.21;
 
-            // 分類對應設定 (配合下拉選單及視覺)
             const CATEGORY_MAP = {
-                sightseeing: { color: 'bg-[#5B6E53]', icon: 'fa-solid fa-camera' },   // 抹茶綠
-                food: { color: 'bg-[#8B3A36]', icon: 'fa-solid fa-utensils' },        // 傳統紅
-                shopping: { color: 'bg-[#C2B29A]', icon: 'fa-solid fa-bag-shopping' },// 木質
+                sightseeing: { color: 'bg-[#5B6E53]', icon: 'fa-solid fa-camera' },
+                food: { color: 'bg-[#8B3A36]', icon: 'fa-solid fa-utensils' },
+                shopping: { color: 'bg-[#C2B29A]', icon: 'fa-solid fa-bag-shopping' },
                 accommodation: { color: 'bg-[#6D8B74]', icon: 'fa-solid fa-bed' },
                 flight: { color: 'bg-[#4A5E42]', icon: 'fa-solid fa-plane' },
                 other: { color: 'bg-gray-400', icon: 'fa-solid fa-circle-info' }
@@ -647,10 +682,11 @@
             const currentTab = ref('itinerary');
 
             // --- 基礎資料區 ---
+            // 修改了 dates 的結構，加入 fullDate 方便排序處理
             const dates = ref([
-                { date: '11/12', weekday: '四' },
-                { date: '11/13', weekday: '五' },
-                { date: '11/14', weekday: '六' },
+                { date: '11/12', weekday: '四', fullDate: '2026-11-12' },
+                { date: '11/13', weekday: '五', fullDate: '2026-11-13' },
+                { date: '11/14', weekday: '六', fullDate: '2026-11-14' },
             ]);
 
             const weatherData = ref([
@@ -664,21 +700,18 @@
                 { name: '大阪難波東方飯店', phone: '+81-6-6643-2211', address: '大阪市中央區千日前2-8-17' }
             ]);
             
-            // 行程資料 (範例)
+            // 行程資料陣列 (必須與 dates 長度一致對應)
             const itineraryData = ref([
-                // Day 1
                 [
                     { id: 1, name: '桃園機場 (TPE) -> 關西機場 (KIX)', category: 'flight', startTime: '08:30', address: '桃園國際機場 第一航廈', note: '中華航空 CI0156，記得提前2小時報到。', hours: '', price: '', transportType: 'flight', travelTime: '' },
                     { id: 2, name: '京都車站', category: 'transport', startTime: '12:30', address: '京都車站', note: '搭乘 HARUKA 關空特急前往京都。', hours: '', price: '', transportType: 'public', travelTime: '1h 20m' },
                     { id: 3, name: '清水寺', category: 'sightseeing', startTime: '15:00', address: '京都市東山區清水1丁目294', note: '世界文化遺產，秋季賞楓名所。', hours: '06:00-18:00', price: '¥400', transportType: 'public', travelTime: '30m' },
                     { id: 4, name: '懷石料理 晚餐', category: 'food', startTime: '18:30', address: '祇園周邊', note: '預約已確認。', hours: '17:00-22:00', price: '', transportType: 'walk', travelTime: '20m' }
                 ],
-                // Day 2
                 [
                     { id: 5, name: '伏見稻荷大社', category: 'sightseeing', startTime: '09:00', address: '京都市伏見區深草藪之內町68', note: '千本鳥居，建議早點抵達避開人潮。', hours: '24小時', price: '免費', transportType: 'public', travelTime: '15m' },
                     { id: 6, name: '錦市場', category: 'food', startTime: '12:00', address: '京都市中京區錦小路通', note: '京都的廚房，品嚐各式街頭小吃。', hours: '09:30-18:00', price: '', transportType: 'public', travelTime: '25m' },
                 ],
-                // Day 3
                 []
             ]);
 
@@ -694,27 +727,28 @@
 
             // 狀態與輔助變數
             const selectedDateIndex = ref(0);
+            
+            // Modal 控制開關
+            const showDateManagerModal = ref(false); // 新增的日期管理模態框
             const showShoppingModal = ref(false);
             const showExpenseModal = ref(false);
             const showItineraryModal = ref(false);
             const isEditMode = ref(false); 
             
             // 表單綁定模型
+            const newDateInput = ref(''); // 管理日期用的 Date String
             const newItinerary = ref({ id: null, name: '', category: 'sightseeing', startTime: '', hours: '', address: '', price: '', note: '', transportType: 'public', travelTime: '' });
             const newShoppingItem = ref({ name: '', image: null });
-            // 日期預設帶入今日
             const todayStr = new Date().toISOString().substring(0, 10);
             const newExpense = ref({ name: '', amount: null, category: 'food', date: todayStr, payment: 'cash', note: '' });
 
             const currencyInput = ref(10000);
             const currencyResult = ref(0);
-            
-            // 拖曳狀態
             const draggedItemIndex = ref(null);
 
             // --- Computed ---
             const currentItinerary = computed(() => {
-                if (!itineraryData.value[selectedDateIndex.value]) itineraryData.value[selectedDateIndex.value] = [];
+                if (!itineraryData.value[selectedDateIndex.value]) return [];
                 return itineraryData.value[selectedDateIndex.value];
             });
 
@@ -763,6 +797,60 @@
                 }
             };
             
+            // ================= 新增/刪除 日期的邏輯 =================
+            const addNewDate = () => {
+                if (!newDateInput.value) return alert('請先選擇要新增的日期！');
+                
+                const dateObj = new Date(newDateInput.value);
+                const days = ['日', '一', '二', '三', '四', '五', '六'];
+                const weekdayStr = days[dateObj.getDay()];
+                const shortDateStr = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+                
+                // 將新日期推入 dates
+                dates.value.push({ 
+                    date: shortDateStr, 
+                    weekday: weekdayStr, 
+                    fullDate: newDateInput.value 
+                });
+                // 對應行程陣列推入空陣列
+                itineraryData.value.push([]);
+                
+                // 為了保持正確時間軸，將 dates 與 itineraryData 進行排序連動
+                const combined = dates.value.map((d, i) => ({
+                    dateInfo: d,
+                    itinList: itineraryData.value[i]
+                }));
+                // 依照 fullDate (yyyy-mm-dd) 來排序
+                combined.sort((a, b) => new Date(a.dateInfo.fullDate) - new Date(b.dateInfo.fullDate));
+                
+                // 更新陣列
+                dates.value = combined.map(c => c.dateInfo);
+                itineraryData.value = combined.map(c => c.itinList);
+
+                // 清空輸入框
+                newDateInput.value = '';
+            };
+
+            const removeDate = (idx) => {
+                // 如果要刪除的日期已經有行程，提出警告
+                if (itineraryData.value[idx] && itineraryData.value[idx].length > 0) {
+                    if (!confirm(`此日期 (${dates.value[idx].date}) 內已有 ${itineraryData.value[idx].length} 筆行程，確定要一併刪除嗎？`)) {
+                        return;
+                    }
+                } else {
+                    if (!confirm('確定要刪除此日期嗎？')) return;
+                }
+                
+                // 執行刪除
+                dates.value.splice(idx, 1);
+                itineraryData.value.splice(idx, 1);
+                
+                // 如果刪除後導致原本選定的 Index 超出範圍，往前回溯一格
+                if (selectedDateIndex.value >= dates.value.length) {
+                    selectedDateIndex.value = Math.max(0, dates.value.length - 1);
+                }
+            };
+
             // --- 行程 CRUD & 拖曳排序 ---
             const editItem = (item) => {
                 isEditMode.value = true;
@@ -794,7 +882,6 @@
             const onDragStart = (event, index) => {
                 draggedItemIndex.value = index;
                 event.dataTransfer.effectAllowed = 'move';
-                // 延遲添加視覺效果
                 setTimeout(() => event.target.classList.add('dragging'), 0);
             };
             
@@ -846,10 +933,12 @@
                 getCategoryColor, getCategoryIcon, getExpenseCategoryColor, getExpenseCategoryIcon,
                 getWeatherIcon, getTransportIcon, getWeatherDescription,
                 showShoppingModal, showExpenseModal, showItineraryModal, isEditMode,
+                showDateManagerModal, // 導出控制日期的變數
+                newDateInput, // 導出新日期輸入綁定
                 newShoppingItem, newExpense, newItinerary,
                 handleAddClick, handleImageUpload, addShoppingItem, removeShoppingItem,
                 addExpense, removeExpense, editItem, saveItineraryItem, removeItineraryItem,
-                onDragStart, onDrop, openMap
+                onDragStart, onDrop, openMap, addNewDate, removeDate // 導出日期管理函式
             };
         }
     }).mount('#app');
