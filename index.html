@@ -744,4 +744,292 @@
         <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl max-h-[80vh] overflow-y-auto">
             <h3 class="font-bold text-center border-b pb-2 mb-4">{{ isEditMode ? '修改行程' : '新增行程' }}</h3>
             <div class="space-y-3">
-                <select v-model="newItinerary.category" class="w-full bg-gray-50 bor
+                <select v-model="newItinerary.category" class="w-full bg-gray-50 border p-3 rounded-xl text-sm outline-none">
+                    <option value="sightseeing">景點</option>
+                    <option value="food">美食</option>
+                    <option value="shopping">購物</option>
+                    <option value="accommodation">住宿</option>
+                    <option value="flight">航班</option>
+                    <option value="other">其他</option>
+                </select>
+                <input v-model="newItinerary.name" placeholder="名稱" class="w-full bg-gray-50 border p-3 rounded-xl text-sm outline-none font-bold">
+                <div class="grid grid-cols-2 gap-3">
+                    <input v-model="newItinerary.startTime" placeholder="時間 (09:00)" class="bg-gray-50 border p-3 rounded-xl text-sm outline-none">
+                    <select v-model="newItinerary.transportType" class="bg-gray-50 border p-3 rounded-xl text-sm outline-none">
+                        <option value="walk">步行</option>
+                        <option value="car">自駕</option>
+                        <option value="public">大眾運輸</option>
+                    </select>
+                </div>
+                <input v-model="newItinerary.address" placeholder="地點 (Google Map 用)" class="w-full bg-gray-50 border p-3 rounded-xl text-sm outline-none">
+                <textarea v-model="newItinerary.note" placeholder="備註" rows="3" class="w-full bg-gray-50 border p-3 rounded-xl text-sm outline-none"></textarea>
+            </div>
+            <div class="flex space-x-2 mt-5">
+                <button @click="showItineraryModal = false" class="flex-1 py-3 bg-gray-100 rounded-xl font-bold">取消</button>
+                <button v-if="isEditMode" @click="removeItineraryItem(newItinerary.id)" class="bg-red-50 text-red-500 px-4 rounded-xl"><i class="fa-solid fa-trash"></i></button>
+                <button @click="saveItineraryItem" class="flex-1 py-3 bg-kyoto-primary text-white rounded-xl font-bold">儲存</button>
+            </div>
+        </div>
+    </div>
+
+    <div v-if="showExpenseModal" @click.self="showExpenseModal = false" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl">
+            <h3 class="font-bold text-center border-b pb-2 mb-4">記一筆花費</h3>
+            <input v-model="newExpense.name" placeholder="花在哪？" class="w-full bg-gray-50 border p-3 mb-3 rounded-xl text-sm outline-none font-bold">
+            <div class="relative mb-4">
+                <span class="absolute left-3 top-3 text-gray-400">¥</span>
+                <input v-model.number="newExpense.amount" type="number" placeholder="金額" class="w-full bg-gray-50 border p-3 pl-7 rounded-xl text-lg font-bold outline-none">
+            </div>
+            <div class="flex space-x-3 mb-5">
+                <button @click="newExpense.payment='cash'" :class="newExpense.payment==='cash' ? 'bg-kyoto-wood text-white' : 'bg-gray-100'" class="flex-1 py-2 rounded-xl text-sm">現金</button>
+                <button @click="newExpense.payment='card'" :class="newExpense.payment==='card' ? 'bg-kyoto-wood text-white' : 'bg-gray-100'" class="flex-1 py-2 rounded-xl text-sm">信用卡</button>
+            </div>
+            <div class="flex space-x-2">
+                <button @click="showExpenseModal = false" class="flex-1 py-3 bg-gray-100 rounded-xl">取消</button>
+                <button @click="addExpense" class="flex-1 py-3 bg-kyoto-primary text-white rounded-xl font-bold">儲存</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // 安全初始化 Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyAjEH96l5reDjsnge5ZxJGNDaCL4GF5YbQ",
+      authDomain: "family-trip-2026-a10ca.firebaseapp.com",
+      projectId: "family-trip-2026-a10ca",
+      storageBucket: "family-trip-2026-a10ca.firebasestorage.app",
+      messagingSenderId: "859868989895",
+      appId: "1:859868989895:web:9a9706f41c284e320bb1e2"
+    };
+    
+    let db = null;
+    let tripDocRef = null;
+    try {
+        if (typeof firebase !== 'undefined') {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            tripDocRef = db.collection('trips').doc('family-trip-2026');
+        }
+    } catch (e) { console.error("Firebase 連線阻擋:", e); }
+
+    const { createApp, ref, computed, onMounted } = Vue
+
+    createApp({
+        setup() {
+            const currentTab = ref('itinerary');
+            const syncState = ref('idle'); 
+            const LOCAL_KEY = 'family_trip_2026_safe_data';
+            
+            const dates = ref([]);
+            const weatherData = ref([]);
+            const itineraryData = ref([]);
+            const shoppingList = ref([]);
+            const expenses = ref([]);
+            const selectedDateIndex = ref(0);
+
+            // ================= 終極防護：安全的記憶體存取 =================
+            const loadLocalData = () => {
+                try {
+                    const local = localStorage.getItem(LOCAL_KEY);
+                    if (local) {
+                        const data = JSON.parse(local);
+                        dates.value = data.dates || [];
+                        weatherData.value = data.weatherData || [];
+                        itineraryData.value = data.itineraryData || [];
+                        shoppingList.value = data.shoppingList || [];
+                        expenses.value = data.expenses || [];
+                    } else {
+                        dates.value = [{ date: '11/12', weekday: '四', fullDate: '2026-11-12' }];
+                        weatherData.value = [{ condition: 'sunny', temp: '20/15', feel: '18' }];
+                        itineraryData.value = [[]];
+                    }
+                } catch(e) {
+                    // 如果 LINE 封鎖 LocalStorage，默默使用預設值不報錯
+                    dates.value = [{ date: '11/12', weekday: '四', fullDate: '2026-11-12' }];
+                    weatherData.value = [{ condition: 'sunny', temp: '20/15', feel: '18' }];
+                    itineraryData.value = [[]];
+                }
+            };
+
+            const saveLocalData = () => {
+                try {
+                    localStorage.setItem(LOCAL_KEY, JSON.stringify({
+                        dates: dates.value || [], 
+                        weatherData: weatherData.value || [], 
+                        itineraryData: itineraryData.value || [],
+                        shoppingList: shoppingList.value || [], 
+                        expenses: expenses.value || []
+                    }));
+                } catch(e) {
+                    console.warn('LINE 隱私設定阻擋了本地儲存');
+                }
+            };
+
+            const syncToFirebase = () => {
+                saveLocalData(); // 永遠先秒存進手機記憶體
+                if (!tripDocRef) {
+                    syncState.value = 'error'; 
+                    setTimeout(() => { syncState.value = 'idle'; }, 3000);
+                    return;
+                }
+                syncState.value = 'syncing'; 
+                tripDocRef.set({
+                    dates: JSON.parse(JSON.stringify(dates.value || [])),
+                    weatherData: JSON.parse(JSON.stringify(weatherData.value || [])),
+                    itineraryData: JSON.parse(JSON.stringify(itineraryData.value || [])),
+                    shoppingList: JSON.parse(JSON.stringify(shoppingList.value || [])),
+                    expenses: JSON.parse(JSON.stringify(expenses.value || []))
+                }, { merge: true })
+                .then(() => {
+                    syncState.value = 'success'; 
+                    setTimeout(() => { if (syncState.value === 'success') syncState.value = 'idle'; }, 2000);
+                })
+                .catch(err => {
+                    syncState.value = 'error'; 
+                    setTimeout(() => { syncState.value = 'idle'; }, 3000);
+                });
+            };
+
+            onMounted(() => {
+                loadLocalData(); 
+                if (tripDocRef) {
+                    try {
+                        tripDocRef.onSnapshot((doc) => {
+                            if (doc.exists) {
+                                const data = doc.data();
+                                dates.value = data.dates || dates.value;
+                                weatherData.value = data.weatherData || weatherData.value;
+                                itineraryData.value = data.itineraryData || itineraryData.value;
+                                shoppingList.value = data.shoppingList || shoppingList.value;
+                                expenses.value = data.expenses || expenses.value;
+                                saveLocalData(); 
+                            }
+                        });
+                    } catch (e) {}
+                }
+            });
+
+            // ================= 終極防護：防爆的字串處理 =================
+            const currentItinerary = computed(() => {
+                if (itineraryData.value && itineraryData.value[selectedDateIndex.value]) return itineraryData.value[selectedDateIndex.value];
+                return [];
+            });
+
+            const currentWeather = computed(() => {
+                if (weatherData.value && weatherData.value[selectedDateIndex.value]) return weatherData.value[selectedDateIndex.value];
+                return { condition: 'sunny', temp: '--/--', feel: '--' };
+            });
+
+            const getTempHigh = (tempStr) => {
+                if (!tempStr) return '--';
+                return tempStr.split('/')[0] || '--';
+            };
+            const getTempLow = (tempStr) => {
+                if (!tempStr) return '--';
+                const parts = tempStr.split('/');
+                return parts.length > 1 ? parts[1] : '--';
+            };
+
+            const totalExpensesJPY = computed(() => {
+                if (!expenses.value) return 0;
+                return expenses.value.reduce((sum, exp) => sum + (exp.amount ? Number(exp.amount) : 0), 0);
+            });
+
+            // UI 邏輯
+            const currencyInput = ref(1000);
+            const currencyResult = ref(210);
+            const calculateCurrency = () => currencyResult.value = Math.round(currencyInput.value * 0.21);
+            const formatNumber = (num) => num ? num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",") : '0';
+
+            const CATEGORY_MAP = { sightseeing: { color: 'bg-[#5B6E53]', icon: 'fa-solid fa-camera' }, food: { color: 'bg-[#8B3A36]', icon: 'fa-solid fa-utensils' }, shopping: { color: 'bg-[#C2B29A]', icon: 'fa-solid fa-bag-shopping' }, accommodation: { color: 'bg-[#6D8B74]', icon: 'fa-solid fa-bed' }, flight: { color: 'bg-[#4A5E42]', icon: 'fa-solid fa-plane' }, other: { color: 'bg-gray-400', icon: 'fa-solid fa-info' } };
+            const getCategoryColor = (cat) => CATEGORY_MAP[cat]?.color || CATEGORY_MAP.other.color;
+            const getCategoryIcon = (cat) => CATEGORY_MAP[cat]?.icon || CATEGORY_MAP.other.icon;
+            const getWeatherIcon = (cond) => ({ sunny: 'fa-solid fa-sun', cloudy: 'fa-solid fa-cloud', rain: 'fa-solid fa-umbrella', snow: 'fa-solid fa-snowflake' }[cond] || 'fa-solid fa-cloud');
+            const getTransportIcon = (type) => ({ walk: 'fa-solid fa-person-walking', car: 'fa-solid fa-car', public: 'fa-solid fa-train' }[type] || 'fa-solid fa-arrow-right');
+            const getExpenseCategoryColor = (cat) => getCategoryColor(cat);
+            const getExpenseCategoryIcon = (cat) => getCategoryIcon(cat);
+            const getWeatherDescription = (cond) => ({ sunny: '晴朗', cloudy: '多雲', rain: '降雨', snow: '下雪' }[cond] || '');
+
+            const openMap = (q) => q && window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`, '_blank');
+            const toggleVisited = (item) => { item.isVisited = !item.isVisited; syncToFirebase(); };
+
+            const showDateManagerModal = ref(false);
+            const showItineraryModal = ref(false);
+            const showShoppingModal = ref(false);
+            const showExpenseModal = ref(false);
+            const showWeatherModal = ref(false);
+            const isEditMode = ref(false);
+
+            const newDateInput = ref('');
+            const newItinerary = ref({ id: null, name: '', category: 'sightseeing', startTime: '', transportType: 'walk', isVisited: false });
+            const newExpense = ref({ name: '', amount: null, date: new Date().toISOString().substring(0, 10), payment: 'cash' });
+            const weatherForm = ref({ condition: 'sunny', temp: '', feel: '' });
+
+            const addNewDate = () => {
+                if (!newDateInput.value) return;
+                const d = new Date(newDateInput.value);
+                if(!dates.value) dates.value = [];
+                if(!weatherData.value) weatherData.value = [];
+                if(!itineraryData.value) itineraryData.value = [];
+                
+                dates.value.push({ date: `${d.getMonth()+1}/${d.getDate()}`, weekday: ['日','一','二','三','四','五','六'][d.getDay()], fullDate: newDateInput.value });
+                weatherData.value.push({ condition: 'sunny', temp: '15/10', feel: '12' });
+                itineraryData.value.push([]);
+                
+                const combined = dates.value.map((d, i) => ({ d, w: weatherData.value[i], it: itineraryData.value[i] }));
+                combined.sort((a,b) => new Date(a.d.fullDate) - new Date(b.d.fullDate));
+                dates.value = combined.map(c => c.d); weatherData.value = combined.map(c => c.w); itineraryData.value = combined.map(c => c.it);
+                
+                newDateInput.value = ''; syncToFirebase();
+            };
+
+            const removeDate = (idx) => { dates.value.splice(idx,1); weatherData.value.splice(idx,1); itineraryData.value.splice(idx,1); syncToFirebase(); };
+
+            const handleAddClick = () => {
+                if (currentTab.value === 'itinerary') { isEditMode.value = false; newItinerary.value = { id: Date.now(), name: '', category: 'sightseeing', startTime: '', transportType: 'walk', isVisited: false }; showItineraryModal.value = true; }
+                else if (currentTab.value === 'shopping') { const name = prompt("想買什麼？"); if (name) { if(!shoppingList.value) shoppingList.value=[]; shoppingList.value.push({ name }); syncToFirebase(); } }
+                else if (currentTab.value === 'expenses') { showExpenseModal.value = true; }
+            };
+
+            const openWeatherEditor = () => { weatherForm.value = { ...(weatherData.value[selectedDateIndex.value] || {condition:'sunny',temp:'',feel:''}) }; showWeatherModal.value = true; };
+            const saveWeather = () => { if(!weatherData.value[selectedDateIndex.value]) weatherData.value[selectedDateIndex.value] = {}; weatherData.value[selectedDateIndex.value] = { ...weatherForm.value }; showWeatherModal.value = false; syncToFirebase(); };
+
+            const editItem = (item) => { isEditMode.value = true; newItinerary.value = {...item}; showItineraryModal.value = true; };
+            const saveItineraryItem = () => {
+                if(!itineraryData.value[selectedDateIndex.value]) itineraryData.value[selectedDateIndex.value] = [];
+                const list = itineraryData.value[selectedDateIndex.value];
+                if (isEditMode.value) { const idx = list.findIndex(i => i.id === newItinerary.value.id); list[idx] = {...newItinerary.value}; }
+                else { list.push({...newItinerary.value}); }
+                showItineraryModal.value = false; syncToFirebase();
+            };
+            const removeItineraryItem = (id) => { itineraryData.value[selectedDateIndex.value] = itineraryData.value[selectedDateIndex.value].filter(i => i.id !== id); showItineraryModal.value = false; syncToFirebase(); };
+
+            const addExpense = () => { if(!expenses.value) expenses.value=[]; expenses.value.push({...newExpense.value}); showExpenseModal.value = false; syncToFirebase(); };
+            const removeExpense = (idx) => { expenses.value.splice(idx,1); syncToFirebase(); };
+            const removeShoppingItem = (idx) => { shoppingList.value.splice(idx,1); syncToFirebase(); };
+
+            const onDragStart = (e, i) => { e.dataTransfer.setData('text/plain', i); };
+            const onDrop = (e, i) => {
+                const fromIdx = e.dataTransfer.getData('text/plain');
+                const list = itineraryData.value[selectedDateIndex.value];
+                const item = list.splice(fromIdx, 1)[0]; list.splice(i, 0, item);
+                syncToFirebase();
+            };
+
+            return {
+                currentTab, dates, selectedDateIndex, weatherData, itineraryData, shoppingList, expenses, currentItinerary, currentWeather, totalExpensesJPY, getTempHigh, getTempLow,
+                syncState, currencyInput, currencyResult, calculateCurrency, formatNumber,
+                getCategoryColor, getCategoryIcon, getExpenseCategoryColor, getExpenseCategoryIcon, getWeatherIcon, getTransportIcon, getWeatherDescription, openMap, toggleVisited,
+                showDateManagerModal, showItineraryModal, showExpenseModal, showWeatherModal, isEditMode,
+                newDateInput, newItinerary, newExpense, weatherForm,
+                addNewDate, removeDate, handleAddClick, openWeatherEditor, saveWeather, editItem, saveItineraryItem, removeItineraryItem,
+                addExpense, removeExpense, removeShoppingItem, onDragStart, onDrop,
+                hotels: ref([{ name: '京阪京都大飯店' }, { name: '大阪難波東方飯店' }])
+            };
+        }
+    }).mount('#app');
+</script>
+</body>
+                </html>
